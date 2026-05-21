@@ -1,0 +1,138 @@
+@page "/agents"
+@using MultiAgentOrchestration.Blazor.Models
+@inject MultiAgentOrchestration.Blazor.Services.MultiAgentWorkflowService WorkflowService
+
+<PageTitle>Agents</PageTitle>
+
+<section class="agents-shell">
+    <div class="page-head">
+        <h1>Agents</h1>
+        <p class="subtitle">Manage active agents and refine their prompt instructions from one place.</p>
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-label">Total Agents</div>
+            <div class="stat-value">@AgentList.Count</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Active</div>
+            <div class="stat-value">@AgentList.Count(a => a.IsActive)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Domains</div>
+            <div class="stat-value">@AgentList.Select(a => a.Domain).Where(d => !string.IsNullOrWhiteSpace(d)).Distinct(StringComparer.OrdinalIgnoreCase).Count()</div>
+        </div>
+    </div>
+
+    <div class="orchestrator-card">
+        <div class="orchestrator-title-row">
+            <h3>Orchestrator</h3>
+            <span class="badge text-bg-info">Hub</span>
+        </div>
+        <p class="mb-2">Concurrent Hub Orchestrator coordinates all specialist agents in parallel and aggregates outputs.</p>
+        <p class="mb-0">Run it from <a href="/orchestration">Orchestration</a>.</p>
+    </div>
+
+    <div class="section-head">
+        <h3>System Agents</h3>
+        <p>Configured agents available for orchestration.</p>
+    </div>
+
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="alert alert-success">@Message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+    <div class="agents-grid">
+        @foreach (var agent in AgentList.Where(a => a.IsActive).OrderBy(a => a.SortOrder).ThenBy(a => a.Title, StringComparer.OrdinalIgnoreCase))
+        {
+            <article class="agent-card">
+                <header class="agent-card-head">
+                    <div>
+                        <h4>@agent.Title</h4>
+                        <div class="agent-id">@agent.Id</div>
+                    </div>
+                    <div class="badge-stack">
+                        @if (agent.IsActive)
+                        {
+                            <span class="badge text-bg-success">Active</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-secondary">Inactive</span>
+                        }
+                        <span class="badge text-bg-light">Sort: @agent.SortOrder</span>
+                    </div>
+                </header>
+
+                @if (!string.IsNullOrWhiteSpace(agent.Description))
+                {
+                    <p class="agent-description">@agent.Description</p>
+                }
+
+                <div class="meta-row">
+                    <span class="meta-chip">Domain: @(string.IsNullOrWhiteSpace(agent.Domain) ? "N/A" : agent.Domain)</span>
+                </div>
+
+                <div class="prompt-editor">
+                    <label class="form-label"><strong>Predefined Prompt (INSTRUCTIONS)</strong></label>
+                    <textarea class="form-control mb-2" rows="6" @bind="EditableInstructions[agent.Id]"></textarea>
+                    <button class="btn btn-sm btn-primary" @onclick="() => SaveInstructionsAsync(agent.Id)">Save Prompt</button>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+@code {
+    private IReadOnlyList<AgentDefinition> AgentList { get; set; } = [];
+    private Dictionary<string, string> EditableInstructions { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private string? Message { get; set; }
+    private string? Error { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            AgentList = await WorkflowService.GetAllAgentsAsync();
+            if (AgentList.Count == 0)
+            {
+                Message = "No agents found in DB. Showing default in-memory agents.";
+                AgentList = WorkflowService.GetDefaultAgents();
+            }
+        }
+        catch (Exception ex)
+        {
+            Error = $"DB fetch failed: {ex.Message}";
+            AgentList = WorkflowService.GetDefaultAgents();
+        }
+
+        EditableInstructions.Clear();
+        foreach (var agent in AgentList)
+        {
+            EditableInstructions[agent.Id] = agent.Instructions;
+        }
+    }
+
+    private async Task SaveInstructionsAsync(string agentId)
+    {
+        Message = null;
+        Error = null;
+        try
+        {
+            await WorkflowService.UpdateAgentInstructionsAsync(agentId, EditableInstructions[agentId]);
+            Message = $"Prompt saved for agent '{agentId}'.";
+            AgentList = await WorkflowService.GetAllAgentsAsync();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+    }
+}

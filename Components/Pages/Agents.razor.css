@@ -1,0 +1,133 @@
+.agents-shell {
+    padding-bottom: 1rem;
+}
+
+.page-head h1 {
+    margin-bottom: 0.25rem;
+}
+
+.subtitle {
+    color: #5f6672;
+    margin-bottom: 1rem;
+}
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.stat-card {
+    border: 1px solid #d8dce2;
+    border-radius: 10px;
+    padding: 0.75rem 0.9rem;
+    background: #fafbfd;
+}
+
+.stat-label {
+    font-size: 0.8rem;
+    color: #606b79;
+}
+
+.stat-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #1f2a37;
+}
+
+.orchestrator-card {
+    border: 1px solid #d8dce2;
+    border-radius: 12px;
+    padding: 1rem;
+    background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
+    margin-bottom: 1rem;
+}
+
+.orchestrator-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.orchestrator-title-row h3 {
+    margin: 0;
+}
+
+.section-head p {
+    color: #5f6672;
+    margin-bottom: 0.75rem;
+}
+
+.agents-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.agent-card {
+    border: 1px solid #d8dce2;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 1rem;
+}
+
+.agent-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    align-items: flex-start;
+    margin-bottom: 0.6rem;
+}
+
+.agent-card-head h4 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.agent-id {
+    font-size: 0.78rem;
+    color: #6a7382;
+}
+
+.badge-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    align-items: flex-end;
+}
+
+.agent-description {
+    margin-bottom: 0.55rem;
+    color: #2e3642;
+}
+
+.meta-row {
+    margin-bottom: 0.65rem;
+}
+
+.meta-chip {
+    display: inline-block;
+    border: 1px solid #d3d9e2;
+    background: #f9fbff;
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.78rem;
+    color: #445065;
+}
+
+.prompt-editor textarea {
+    font-size: 0.92rem;
+}
+
+@media (max-width: 960px) {
+    .agents-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stats-row {
+        grid-template-columns: 1fr;
+    }
+}

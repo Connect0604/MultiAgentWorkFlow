@@ -1,0 +1,287 @@
+@page "/orchestrator-config"
+@using MultiAgentOrchestration.Blazor.Models
+@inject MultiAgentOrchestration.Blazor.Services.MultiAgentWorkflowService WorkflowService
+
+<PageTitle>Orchestrators</PageTitle>
+
+<h1>Orchestrators</h1>
+<p>Create/update orchestrators and map active agents.</p>
+
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="alert alert-success">@Message</div>
+}
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+<EditForm Model="@this" OnSubmit="SaveAsync" FormName="orchestratorConfigForm">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label">Orchestrator ID</label>
+            <input class="form-control" @bind="OrchestratorId" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Name</label>
+            <input class="form-control" @bind="Name" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Sort Order</label>
+            <input type="number" class="form-control" @bind="SortOrder" />
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="isActive" @bind="IsActive" />
+                <label class="form-check-label" for="isActive">Active</label>
+            </div>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" rows="2" @bind="Description"></textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Intent Keywords (comma-separated)</label>
+            <input class="form-control" @bind="IntentKeywords" />
+        </div>
+    </div>
+
+    <hr />
+    <h4>Agent Mappings</h4>
+    <p class="text-muted">Only active system agents are listed for mapping.</p>
+
+    @foreach (var agent in ActiveAgents.OrderBy(a => a.SortOrder).ThenBy(a => a.Title, StringComparer.OrdinalIgnoreCase))
+    {
+        var selected = SelectedAgentIds.Contains(agent.Id);
+        <div class="card mb-2">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="@($"m_{agent.Id}")" checked="@selected" @onchange="e => ToggleAgent(agent.Id, e.Value)" />
+                            <label class="form-check-label" for="@($"m_{agent.Id}")"><strong>@agent.Title</strong> <span class="text-muted">(@agent.Id)</span></label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <input class="form-control" placeholder="Domain hint (optional)" @bind="MapState[agent.Id].DomainHint" disabled="@(!selected)" />
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" class="form-control" @bind="MapState[agent.Id].Priority" disabled="@(!selected)" />
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" @bind="MapState[agent.Id].IsActive" disabled="@(!selected)" />
+                            <label class="form-check-label">Map Active</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <button class="btn btn-primary mt-2" type="submit">Save Orchestrator</button>
+</EditForm>
+
+<hr />
+<h3>Existing Orchestrators</h3>
+@if (Orchestrators.Count == 0)
+{
+    <p>No orchestrators found.</p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Active</th>
+                <th>Sort</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var o in Orchestrators.OrderBy(x => x.SortOrder).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                <tr>
+                    <td>@o.OrchestratorId</td>
+                    <td>@o.Name</td>
+                    <td>@(o.IsActive ? "Yes" : "No")</td>
+                    <td>@o.SortOrder</td>
+                    <td><button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditAsync(o.OrchestratorId)">Edit</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string OrchestratorId { get; set; } = string.Empty;
+    private string Name { get; set; } = string.Empty;
+    private string? Description { get; set; }
+    private string? IntentKeywords { get; set; }
+    private int SortOrder { get; set; }
+    private bool IsActive { get; set; } = true;
+    private string? Message { get; set; }
+    private string? Error { get; set; }
+    private IReadOnlyList<AgentDefinition> ActiveAgents { get; set; } = [];
+    private IReadOnlyList<OrchestratorDefinition> Orchestrators { get; set; } = [];
+    private HashSet<string> SelectedAgentIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, MappingEditState> MapState { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        ActiveAgents = await WorkflowService.GetAllAgentsAsync();
+        ActiveAgents = ActiveAgents.Where(a => a.IsActive).ToList();
+        Orchestrators = await WorkflowService.GetAllOrchestratorsAsync();
+        EnsureMapState();
+    }
+
+    private void EnsureMapState()
+    {
+        foreach (var agent in ActiveAgents)
+        {
+            if (!MapState.ContainsKey(agent.Id))
+            {
+                MapState[agent.Id] = new MappingEditState { Priority = agent.SortOrder, IsActive = true };
+            }
+        }
+    }
+
+    private void ToggleAgent(string agentId, object? value)
+    {
+        if (!MapState.ContainsKey(agentId))
+        {
+            MapState[agentId] = new MappingEditState { Priority = 0, IsActive = true };
+        }
+
+        if (value is bool isChecked && isChecked)
+        {
+            SelectedAgentIds.Add(agentId);
+        }
+        else
+        {
+            SelectedAgentIds.Remove(agentId);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        Message = null;
+        Error = null;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(OrchestratorId) || string.IsNullOrWhiteSpace(Name))
+            {
+                throw new InvalidOperationException("Orchestrator ID and Name are required.");
+            }
+
+            var orchestrator = new OrchestratorDefinition(
+                RowId: null,
+                OrchestratorId: OrchestratorId.Trim(),
+                Name: Name.Trim(),
+                Description: string.IsNullOrWhiteSpace(Description) ? null : Description.Trim(),
+                IntentKeywords: string.IsNullOrWhiteSpace(IntentKeywords) ? null : IntentKeywords.Trim(),
+                IsActive: IsActive,
+                SortOrder: SortOrder,
+                NoMatchPolicy: "fail");
+
+            var mappings = SelectedAgentIds
+                .Where(agentId => MapState.ContainsKey(agentId))
+                .Select(agentId =>
+                {
+                    var state = MapState[agentId];
+                    return new OrchestratorAgentMapping(
+                        orchestrator.OrchestratorId,
+                        agentId,
+                        string.IsNullOrWhiteSpace(state.DomainHint) ? null : state.DomainHint.Trim(),
+                        state.Priority,
+                        state.IsActive);
+                })
+                .ToList();
+
+            await WorkflowService.SaveOrchestratorAsync(orchestrator, mappings);
+            Message = $"Orchestrator '{orchestrator.OrchestratorId}' saved.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+    }
+
+    private async Task EditAsync(string orchestratorId)
+    {
+        Message = null;
+        Error = null;
+
+        try
+        {
+            var current = Orchestrators.FirstOrDefault(x => string.Equals(x.OrchestratorId, orchestratorId, StringComparison.OrdinalIgnoreCase))
+                ?? (await WorkflowService.GetAllOrchestratorsAsync())
+                    .FirstOrDefault(x => string.Equals(x.OrchestratorId, orchestratorId, StringComparison.OrdinalIgnoreCase));
+
+            if (current is null)
+            {
+                Error = $"Orchestrator '{orchestratorId}' was not found.";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            OrchestratorId = current.OrchestratorId;
+            Name = current.Name;
+            Description = current.Description;
+            IntentKeywords = current.IntentKeywords;
+            IsActive = current.IsActive;
+            SortOrder = current.SortOrder;
+
+            SelectedAgentIds.Clear();
+            EnsureMapState();
+
+            var mappings = await WorkflowService.GetOrchestratorMappingsAsync(orchestratorId);
+            var activeAgentIds = ActiveAgents.Select(a => a.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var ignoredMappings = new List<string>();
+            foreach (var m in mappings)
+            {
+                if (!activeAgentIds.Contains(m.AgentId))
+                {
+                    ignoredMappings.Add(m.AgentId);
+                    continue;
+                }
+
+                SelectedAgentIds.Add(m.AgentId);
+                if (!MapState.ContainsKey(m.AgentId))
+                {
+                    MapState[m.AgentId] = new MappingEditState();
+                }
+
+                var state = MapState[m.AgentId];
+                state.DomainHint = m.DomainHint;
+                state.Priority = m.Priority;
+                state.IsActive = m.IsActive;
+            }
+
+            Message = ignoredMappings.Count == 0
+                ? $"Loaded '{orchestratorId}' for editing."
+                : $"Loaded '{orchestratorId}' for editing. Ignored inactive/unavailable mapped agents: {string.Join(", ", ignoredMappings)}.";
+        }
+        catch (Exception ex)
+        {
+            Error = $"Edit load failed: {ex.Message}";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private sealed class MappingEditState
+    {
+        public string? DomainHint { get; set; }
+        public int Priority { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}

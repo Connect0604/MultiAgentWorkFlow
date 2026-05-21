@@ -1,0 +1,324 @@
+@page "/orchestration"
+@using MultiAgentOrchestration.Blazor.Models
+@inject MultiAgentOrchestration.Blazor.Services.MultiAgentWorkflowService WorkflowService
+
+<PageTitle>Multi-Agent Workflow</PageTitle>
+
+<h1>Multi-Agent Workflow</h1>
+
+<p>Run a concurrent workflow where specialized agents collaborate on the same prompt.</p>
+
+<EditForm Model="@this" OnSubmit="RunAsync" FormName="orchestrationForm">
+    <div class="mb-3">
+        <label class="form-label" for="orchestrator">Orchestrator</label>
+        <select id="orchestrator" class="form-select" value="@SelectedOrchestratorId" @onchange="OnOrchestratorChanged">
+            @if (Orchestrators.Count == 0)
+            {
+                <option value="">No active orchestrators</option>
+            }
+            else
+            {
+                @foreach (var orchestrator in Orchestrators.OrderBy(x => x.SortOrder).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    <option value="@orchestrator.OrchestratorId">@orchestrator.Name (@orchestrator.OrchestratorId)</option>
+                }
+            }
+        </select>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(SelectedOrchestratorId))
+    {
+        <div class="mb-3 p-3 border rounded bg-light-subtle">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>Attached Agents</strong>
+                <span class="badge text-bg-secondary">@AttachedMappings.Count mapped</span>
+            </div>
+            @if (AttachedMappings.Count == 0)
+            {
+                <div class="text-muted">No mapped agents found for this orchestrator.</div>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var mapping in AttachedMappings.OrderBy(x => x.Priority))
+                    {
+                        var agentTitle = AgentLookup.TryGetValue(mapping.AgentId, out var found) ? found.Title : mapping.AgentId;
+                        <span class="badge rounded-pill text-bg-info">
+                            @mapping.Priority. @agentTitle (@mapping.AgentId)
+                        </span>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <div class="mb-3">
+        <label class="form-label" for="promptBox">Prompt</label>
+        <textarea id="promptBox" class="form-control" rows="5" @bind="Prompt" @bind:event="oninput"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit" disabled="@(IsRunning || Orchestrators.Count == 0)">@(IsRunning ? "Running..." : "Run Workflow")</button>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="alert alert-danger mt-3">@Error</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(FallbackMessage))
+{
+    <div class="alert alert-warning mt-3">@FallbackMessage</div>
+}
+
+@if (IsRunning || AgentStatuses.Count > 0)
+{
+    <div class="mt-4">
+        @if (LastPlan is not null)
+        {
+            <div class="alert alert-info">
+                <strong>Workflow:</strong> @LastPlan.WorkflowName
+                <br />
+                <strong>Reason:</strong> @LastPlan.Reason
+                <br />
+                <strong>Selected Orchestrator:</strong> @LastPlan.SelectedOrchestratorName (@LastPlan.SelectedOrchestratorId)
+                <br />
+                <strong>Mapping Pool Count:</strong> @LastPlan.MappingPoolCount
+                <br />
+                <strong>Selected Agents:</strong> @string.Join(", ", LastPlan.SelectedAgentIds)
+            </div>
+        }
+
+        <h3>Agent Status</h3>
+        <div class="mb-3">
+            @if (AgentStatuses.Count == 0)
+            {
+                <p>No active agents yet.</p>
+            }
+            else
+            {
+                <div class="progress mb-3" role="progressbar" aria-label="Workflow progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@ProgressPercent">
+                    <div class="progress-bar progress-bar-striped @(IsRunning ? "progress-bar-animated" : string.Empty)" style="width: @($"{ProgressPercent}%")">
+                        @ProgressPercent%
+                    </div>
+                </div>
+
+                @foreach (var agent in AgentStatuses.OrderBy(x => GetDisplayOrder(x.Key)).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    <div class="card mb-2">
+                        <div class="card-body py-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>@agent.Key</strong>
+                                <span class="badge ms-2 @(GetStatusBadgeClass(agent.Value))">@agent.Value</span>
+                            </div>
+                            <div>
+                                @if (agent.Value == "Working")
+                                {
+                                    <span class="spinner-border spinner-border-sm text-warning" role="status" aria-hidden="true"></span>
+                                }
+                                else if (agent.Value == "Completed")
+                                {
+                                    <span class="text-success">Done</span>
+                                }
+                            </div>
+                            </div>
+
+                            @if (LiveAgentText.TryGetValue(agent.Key, out var liveText) && !string.IsNullOrWhiteSpace(liveText))
+                            {
+                                <pre class="mt-2 mb-0" style="white-space: pre-wrap;">@liveText</pre>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+    </div>
+}
+
+@if (Result is not null)
+{
+    <div class="mt-4">
+        <h3>Agent Outputs</h3>
+        @if (Result.AgentOutputs.Count == 0)
+        {
+            <p>No agent outputs were returned.</p>
+        }
+        else
+        {
+            @foreach (var output in Result.AgentOutputs)
+            {
+                <div class="card mb-3">
+                    <div class="card-header"><strong>@output.AgentId</strong></div>
+                    <div class="card-body">
+                        <pre class="mb-0" style="white-space: pre-wrap;">@output.Text</pre>
+                    </div>
+                </div>
+            }
+        }
+
+        <h3>Final Aggregated Messages</h3>
+        @if (Result.FinalMessages.Count == 0)
+        {
+            <p>No final aggregated messages were produced.</p>
+        }
+        else
+        {
+            @foreach (var message in Result.FinalMessages.Where(m => !string.IsNullOrWhiteSpace(m)))
+            {
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <pre class="mb-0" style="white-space: pre-wrap;">@message</pre>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private string Prompt { get; set; } = "Design a production-ready rollout plan for a multi-agent customer support copilot.";
+    private OrchestrationResult? Result { get; set; }
+    private WorkflowExecutionPlan? LastPlan { get; set; }
+    private IReadOnlyList<OrchestratorDefinition> Orchestrators { get; set; } = [];
+    private IReadOnlyList<OrchestratorAgentMapping> AttachedMappings { get; set; } = [];
+    private Dictionary<string, AgentDefinition> AgentLookup { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    private string? SelectedOrchestratorId { get; set; }
+    private Dictionary<string, string> AgentStatuses { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> LiveAgentText { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private int ProgressPercent { get; set; }
+    private bool IsRunning { get; set; }
+    private string? Error { get; set; }
+    private string? FallbackMessage { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Orchestrators = await WorkflowService.GetActiveOrchestratorsAsync();
+        SelectedOrchestratorId = Orchestrators.FirstOrDefault()?.OrchestratorId;
+        var allAgents = await WorkflowService.GetAllAgentsAsync();
+        AgentLookup = allAgents.ToDictionary(a => a.Id, StringComparer.OrdinalIgnoreCase);
+        await LoadAttachedAgentsAsync();
+    }
+
+    private async Task OnOrchestratorChanged(ChangeEventArgs e)
+    {
+        SelectedOrchestratorId = Convert.ToString(e.Value);
+        await LoadAttachedAgentsAsync();
+    }
+
+    private async Task LoadAttachedAgentsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedOrchestratorId))
+        {
+            AttachedMappings = [];
+            return;
+        }
+
+        AttachedMappings = await WorkflowService.GetOrchestratorMappingsAsync(SelectedOrchestratorId, activeOnly: true);
+    }
+
+    private async Task RunAsync()
+    {
+        Error = null;
+        FallbackMessage = null;
+        Result = null;
+        LastPlan = null;
+        AgentStatuses.Clear();
+        LiveAgentText.Clear();
+        ProgressPercent = 0;
+        IsRunning = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(SelectedOrchestratorId))
+            {
+                throw new InvalidOperationException("No active orchestrator is available. Configure and activate an orchestrator first.");
+            }
+
+            Result = await WorkflowService.RunOrchestratorAsync(
+                new OrchestratorExecutionRequest(SelectedOrchestratorId, Prompt),
+                (plan) =>
+                {
+                    LastPlan = plan;
+                    if (plan.SelectedAgentIds.Count == 0)
+                    {
+                        FallbackMessage = "No eligible mapped agents were selected for this orchestrator. Update mappings/domains and retry.";
+                    }
+                    _ = InvokeAsync(StateHasChanged);
+                },
+                (agentId, status) =>
+                {
+                    if (AgentStatuses.TryGetValue(agentId, out var currentStatus)
+                        && string.Equals(currentStatus, "Completed", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+                    AgentStatuses[agentId] = status;
+                    ProgressPercent = CalculateProgress(AgentStatuses);
+                    _ = InvokeAsync(StateHasChanged);
+                },
+                (agentId, chunk) =>
+                {
+                    if (!LiveAgentText.TryGetValue(agentId, out var current))
+                    {
+                        current = string.Empty;
+                    }
+
+                    LiveAgentText[agentId] = current + chunk;
+                    _ = InvokeAsync(StateHasChanged);
+                });
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            IsRunning = false;
+            ProgressPercent = CalculateProgress(AgentStatuses);
+        }
+    }
+
+    private static string GetStatusBadgeClass(string status)
+    {
+        return status switch
+        {
+            "Completed" => "text-bg-success",
+            "Working" => "text-bg-warning",
+            "Queued" => "text-bg-secondary",
+            _ => "text-bg-light"
+        };
+    }
+
+    private static int CalculateProgress(IReadOnlyDictionary<string, string> statuses)
+    {
+        if (statuses.Count == 0)
+        {
+            return 0;
+        }
+
+        var completed = statuses.Count(x => string.Equals(x.Value, "Completed", StringComparison.OrdinalIgnoreCase));
+        var working = statuses.Count(x => string.Equals(x.Value, "Working", StringComparison.OrdinalIgnoreCase));
+        var total = statuses.Count;
+
+        var progress = ((completed * 100.0) + (working * 50.0)) / total;
+        return (int)Math.Round(progress);
+    }
+
+    private int GetDisplayOrder(string agentId)
+    {
+        if (LastPlan is null || LastPlan.SelectedAgentIds.Count == 0)
+        {
+            return int.MaxValue;
+        }
+
+        var index = LastPlan.SelectedAgentIds
+            .Select((id, i) => new { id, i })
+            .FirstOrDefault(x => string.Equals(x.id, agentId, StringComparison.OrdinalIgnoreCase))
+            ?.i;
+
+        return index ?? int.MaxValue;
+    }
+}
+

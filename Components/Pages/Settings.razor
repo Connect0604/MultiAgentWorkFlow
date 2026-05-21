@@ -1,0 +1,86 @@
+@page "/settings"
+@using MultiAgentOrchestration.Blazor.Models
+@inject MultiAgentOrchestration.Blazor.Services.AppSettingsService AppSettingsService
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Settings</h1>
+<p>Update Agent Framework settings stored in <code>appsettings.json</code>.</p>
+
+@if (IsLoading)
+{
+    <p>Loading settings...</p>
+}
+else
+{
+    <EditForm Model="SettingsModel" OnValidSubmit="SaveAsync" FormName="settingsForm">
+        <div class="mb-3">
+            <label class="form-label" for="endpoint">Endpoint</label>
+            <input id="endpoint" class="form-control" @bind="SettingsModel.Endpoint" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="model">Model</label>
+            <input id="model" class="form-control" @bind="SettingsModel.Model" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="apiKey">API Key (optional for Ollama)</label>
+            <input id="apiKey" class="form-control" @bind="SettingsModel.ApiKey" />
+        </div>
+        <button class="btn btn-primary" type="submit" disabled="@IsSaving">@(IsSaving ? "Saving..." : "Save Settings")</button>
+    </EditForm>
+}
+
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="alert alert-success mt-3">@Message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="alert alert-danger mt-3">@Error</div>
+}
+
+@code {
+    private AgentFrameworkOptions SettingsModel { get; set; } = new();
+    private bool IsLoading { get; set; } = true;
+    private bool IsSaving { get; set; }
+    private string? Message { get; set; }
+    private string? Error { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            SettingsModel = await AppSettingsService.GetAgentFrameworkSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        Message = null;
+        Error = null;
+        IsSaving = true;
+
+        try
+        {
+            await AppSettingsService.SaveAgentFrameworkSettingsAsync(SettingsModel);
+            Message = "Settings saved to appsettings.json.";
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+}

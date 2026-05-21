@@ -1,0 +1,32 @@
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+
+# Rider / VS Code / VS
+.vs/
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# NuGet
+*.nupkg
+
+# Test results
+TestResults/
+
+# Local secrets override files (optional)
+appsettings.Local.json
+
+# Local secret config
+appsettings.Local.json
+
