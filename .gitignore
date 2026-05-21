@@ -30,3 +30,5 @@ appsettings.Local.json
 # Local secret config
 appsettings.Local.json
 
+
+appsettings.json
